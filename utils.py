@@ -80,6 +80,29 @@ def classification_report_to_df(report):
     return pd.DataFrame(report_list[1:], columns=report_list[0])  
 
 
+def conll_classification_report_to_df(report):
+    report_list = []
+    report_list.append(["class", "accuracy", "precision", "recall", "f1-score", "support"])
+    for i, line in enumerate(report.split("\n")):
+        line = line.strip()
+        if not line:
+            continue
+        if i == 0:
+            continue
+        if i == 1:
+            line = re.findall(
+                'accuracy:\s*([0-9\.]{4,5})%; precision:\s+([0-9\.]{4,5})%; recall:\s+([0-9\.]{4,5})%; FB1:\s+([0-9\.]{4,5})',
+                line)[0]
+            line = ("overall",) + tuple(map(float, line)) + (0,)
+        else:
+            line = re.findall(
+                '\s*(.+?): precision:\s+([0-9\.]{4,5})%; recall:\s+([0-9\.]{4,5})%; FB1:\s+([0-9\.]{4,5})\s+([0-9]+)',
+                line)[0]
+            line = (line[0], 0.0) + tuple(map(float, line[1:-1])) + (int(line[-1]),)
+        report_list.append(line)
+    return pd.DataFrame(report_list[1:], columns=report_list[0])
+
+
 def get_labels(y_arr):
     return np.expand_dims(
         np.array([

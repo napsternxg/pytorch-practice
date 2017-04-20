@@ -12,30 +12,40 @@ import torch.optim as optim
 class Vocab(object):
     def __init__(self, name="vocab",
                  offset_items=tuple([]),
-                 UNK=None):
+                 UNK=None, lower=True):
         self.name = name
         self.item2idx = {}
         self.idx2item = []
         self.size = 0
         self.UNK = UNK
+        self.lower=lower
         
-        self.batch_add(offset_items)
+        self.batch_add(offset_items, lower=False)
         if UNK is not None:
-            self.add(UNK)
+            self.add(UNK, lower=False)
             self.UNK_ID = self.item2idx[self.UNK]
         self.offset = self.size
         
-    def add(self, item):
+    def add(self, item, lower=True):
+        if self.lower and lower:
+            item = item.lower()
         if item not in self.item2idx:
             self.item2idx[item] = self.size
             self.size += 1
             self.idx2item.append(item)
             
-    def batch_add(self, items):
+    def batch_add(self, items, lower=True):
         for item in items:
-            self.add(item)
+            self.add(item, lower=lower)
             
-    def getidx(self, item):
+    def in_vocab(self, item, lower=True):
+        if self.lower and lower:
+            item = item.lower()
+        return item in self.item2idx
+        
+    def getidx(self, item, lower=True):
+        if self.lower and lower:
+            item = item.lower()
         if item not in self.item2idx:
             if self.UNK is None:
                 raise RuntimeError("UNK is not defined. %s not in vocab." % item)
@@ -43,9 +53,10 @@ class Vocab(object):
         return self.item2idx[item]
             
     def __repr__(self):
-        return "Vocab(name={}, size={:d}, UNK={}, offset={:d})".format(
+        return "Vocab(name={}, size={:d}, UNK={}, offset={:d}, lower={})".format(
             self.name, self.size,
-            self.UNK, self.offset
+            self.UNK, self.offset,
+            self.lower
         )
     
 class Seq2Vec(object):

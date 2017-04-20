@@ -100,7 +100,7 @@ class CharEmbedding(nn.Module):
     
     
 class WordCharEmbedding(nn.Module):
-    def __init__(self, vocab_size, embedding_size, char_embed_kwargs, dropout=0.5, ):
+    def __init__(self, vocab_size, embedding_size, char_embed_kwargs, dropout=0.5):
         super(WordCharEmbedding, self).__init__()
         self.char_embeddings = CharEmbedding(**char_embed_kwargs)
         self.word_embeddings = nn.Embedding(vocab_size, embedding_size)

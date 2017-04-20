@@ -53,6 +53,8 @@ def parse_args(argv):
     arg('-t', '--no-types', action='store_const', const=True, default=False,
         help='evaluate without entity types')
     arg('file', nargs='?', default=None)
+    arg('--outstream', default=None,
+        help='output file for storing report')
     return parser.parse_args(argv)
 
 def parse_tag(t):
@@ -241,12 +243,13 @@ def start_of_chunk(prev_tag, tag, prev_type, type_):
 
     return chunk_start
 
-def evaluate_from_file(filename, outstream=None):
+def evaluate_from_file(filename, argv, outstream=None):
+    args = parse_args(argv[1:])
     with open(filename) as f:
         counts = evaluate(f, args)
     report(counts, outstream)
     
-def main(argv):
+def main(argv, outstream=None):
     args = parse_args(argv[1:])
 
     if args.file is None:
@@ -254,7 +257,9 @@ def main(argv):
     else:
         with open(args.file) as f:
             counts = evaluate(f, args)
-    report(counts)
+    if outstream is not None:
+        args.outstream = outstream
+    report(counts, args.outstream)
 
 if __name__ == '__main__':
     sys.exit(main(sys.argv))

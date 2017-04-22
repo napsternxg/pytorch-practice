@@ -8,6 +8,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
+from pathlib import Path
+
 
 class Vocab(object):
     def __init__(self, name="vocab",
@@ -58,6 +60,40 @@ class Vocab(object):
             self.UNK, self.offset,
             self.lower
         )
+    
+    
+def load_word_vectors(vector_file, ndims, vocab, cache_file, override_cache=False):
+    W = np.zeros((vocab.size, ndims), dtype="float32")
+    # Check for cached file and return vectors
+    cache_file = Path(cache_file)
+    if cache_file.is_file() and not override_cache:
+        W = np.load(cache_file)
+        return W
+    # Else load vectors from the vector file
+    total, found = 0, 0
+    with open(vector_file) as fp:
+        for line in fp:
+            line = line.strip().split()
+            if line:
+                total += 1
+                assert len(line) == ndims+1,(
+                    "{} vector dims {} doesn't match ndims={}".format(line[0], len(line)-1, ndims)
+                )
+                word = line[0]
+                idx = vocab.getidx(word) 
+                if idx >= vocab.offset:
+                    found += 1
+                    vecs = np.array(list(map(float, line[1:])))
+                    W[idx, :] += vecs
+    # Write to cache file
+    print("Found {} [{:.2f}%] vectors from {} vectors in {} with ndims={}".format(
+        found, found * 100/vocab.size, total, vector_file, ndims))
+    norm_W = np.sqrt((W*W).sum(axis=1, keepdims=True))
+    valid_idx = norm_W.squeeze() != 0
+    W[valid_idx, :] /= norm_W[valid_idx]
+    print("Caching embedding with shape {} to {}".format(W.shape, cache_file.as_posix()))
+    np.save(cache_file, W)
+    return W    
     
 class Seq2Vec(object):
     def __init__(self, vocab):

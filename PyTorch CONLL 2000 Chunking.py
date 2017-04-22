@@ -3,7 +3,8 @@
 
 # In[1]:
 
-
+import matplotlib
+matplotlib.use("Agg")
 import torch
 from torch.autograd import Variable
 import torch.nn as nn
@@ -271,7 +272,7 @@ assign_embeddings(word_char_embedding.word_embeddings, pretrained_embeddings, fi
 
 # ## Class based
 
-# In[28]:
+# In[22]:
 
 class ModelWrapper(object):
     def __init__(self, model,
@@ -405,7 +406,7 @@ def training_wrapper(
     }
 
 
-# In[29]:
+# In[23]:
 
 class LSTMTaggerModel(ModelWrapper):
     def __init__(self, model,
@@ -444,7 +445,7 @@ class LSTMTaggerModel(ModelWrapper):
         return prediction.data.cpu().max(1)[1].numpy().ravel()
 
 
-# In[30]:
+# In[24]:
 
 use_cuda=True
 n_embed=100
@@ -474,17 +475,17 @@ model_wrapper = LSTMTaggerModel(
     nn.NLLLoss(), use_cuda=use_cuda)
 
 
-# In[31]:
+# In[25]:
 
 model_wrapper.get_instance_loss(train_tensors[0])
 
 
-# In[32]:
+# In[26]:
 
 len(list(model_wrapper.model.parameters()))
 
 
-# In[33]:
+# In[27]:
 
 n_epochs=5
 training_history = training_wrapper(
@@ -503,13 +504,13 @@ training_history = training_wrapper(
 model_wrapper.save("LSTMTaggerModel_CONLL2000")
 
 
-# In[34]:
+# In[28]:
 
 preds = model_wrapper.predict(train_tensors[0])
 preds
 
 
-# In[35]:
+# In[29]:
 
 fig, ax = plt.subplots(1,1)
 plot_losses(training_history["training_loss"],
@@ -520,7 +521,7 @@ ax.legend()
 sns.despine(offset=5)
 plt.savefig("LSTMTaggerModel_CONLL2000.pdf")
 
-# In[36]:
+# In[30]:
 
 for title, tensors, corpus in zip(
     ["train", "dev", "test"],
@@ -534,7 +535,7 @@ for title, tensors, corpus in zip(
 
 # ## CRF model
 
-# In[37]:
+# In[31]:
 
 class BiLSTMTaggerWordCRFModel(ModelWrapper):
     def __init__(self, model,
@@ -573,7 +574,7 @@ class BiLSTMTaggerWordCRFModel(ModelWrapper):
         return self.model.crf.forward(emissions)[1]
 
 
-# In[38]:
+# In[32]:
 
 use_cuda=True
 n_embed=100
@@ -603,7 +604,7 @@ model_wrapper = BiLSTMTaggerWordCRFModel(
     None, use_cuda=use_cuda)
 
 
-# In[40]:
+# In[33]:
 
 n_epochs=5
 training_history = training_wrapper(
@@ -622,7 +623,7 @@ training_history = training_wrapper(
 model_wrapper.save("BiLSTMTaggerWordCRFModel_CONLL2000")
 
 
-# In[41]:
+# In[34]:
 
 fig, ax = plt.subplots(1,1)
 plot_losses(training_history["training_loss"],
@@ -633,7 +634,7 @@ ax.legend()
 sns.despine(offset=5)
 plt.savefig("BiLSTMTaggerWordCRFModel_CONLL2000.pdf")
 
-# In[42]:
+# In[35]:
 
 for title, tensors, corpus in zip(
     ["train", "dev", "test"],
@@ -645,7 +646,7 @@ for title, tensors, corpus in zip(
     conll_eval(["conlleval", "%s.chunking.conll" % title]) 
 
 
-# In[43]:
+# In[36]:
 
 temp_io = io.StringIO()
 conll_eval(["conlleval", "%s.chunking.conll" % "train"], outstream=temp_io)

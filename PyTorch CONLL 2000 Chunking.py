@@ -449,10 +449,10 @@ class LSTMTaggerModel(ModelWrapper):
 
 use_cuda=True
 n_embed=100
-hidden_size=20
+hidden_size=100
 batch_size=10
 
-char_emb_size=10
+char_emb_size=50
 output_channels=50
 kernel_sizes=[2, 3]
 
@@ -466,7 +466,7 @@ char_embed_kwargs=dict(
 
 word_char_embedding = WordCharEmbedding(
         word_vocab.size, word_emb_size,
-        char_embed_kwargs, dropout=0.2)
+        char_embed_kwargs, dropout=0)
 # Assign glove embeddings
 assign_embeddings(word_char_embedding.word_embeddings, pretrained_embeddings, fix_embedding=True)
 
@@ -494,7 +494,7 @@ training_history = training_wrapper(
     optimizer=optim.Adam,
     optimizer_kwargs={
         #"lr": 0.01,
-        "weight_decay": 0.5
+        "weight_decay": 0.0
     },
     n_epochs=n_epochs,
     batch_size=batch_size,
@@ -578,10 +578,10 @@ class BiLSTMTaggerWordCRFModel(ModelWrapper):
 
 use_cuda=True
 n_embed=100
-hidden_size=20
-batch_size=10
+hidden_size=128
+batch_size=64
 
-char_emb_size=10
+char_emb_size=50
 output_channels=50
 kernel_sizes=[2, 3]
 
@@ -595,7 +595,7 @@ char_embed_kwargs=dict(
 
 word_char_embedding = WordCharEmbedding(
         word_vocab.size, word_emb_size,
-        char_embed_kwargs, dropout=0.2)
+        char_embed_kwargs, dropout=0)
 # Assign glove embeddings
 assign_embeddings(word_char_embedding.word_embeddings, pretrained_embeddings, fix_embedding=True)
 
@@ -606,14 +606,14 @@ model_wrapper = BiLSTMTaggerWordCRFModel(
 
 # In[33]:
 
-n_epochs=5
+n_epochs=50
 training_history = training_wrapper(
     model_wrapper, train_tensors, 
     eval_tensors=dev_tensors,
     optimizer=optim.Adam,
     optimizer_kwargs={
         #"lr": 0.01,
-        "weight_decay": 0.5
+        "weight_decay": 0
     },
     n_epochs=n_epochs,
     batch_size=batch_size,
@@ -634,6 +634,9 @@ ax.legend()
 sns.despine(offset=5)
 plt.savefig("BiLSTMTaggerWordCRFModel_CONLL2000.pdf")
 
+# Performance may improve by creating all the torch tensors upfront and then pinning them to memory
+
+
 # In[35]:
 
 for title, tensors, corpus in zip(
@@ -644,18 +647,5 @@ for title, tensors, corpus in zip(
     get_ipython().magic(u'time predictions = model_wrapper.predict_batch(tensors)')
     print_predictions(corpus, predictions, "%s.chunking.conll" % title, chunk_vocab)
     conll_eval(["conlleval", "%s.chunking.conll" % title]) 
-
-
-# In[36]:
-
-temp_io = io.StringIO()
-conll_eval(["conlleval", "%s.chunking.conll" % "train"], outstream=temp_io)
-report = temp_io.getvalue()
-print(conll_classification_report_to_df(report))
-temp_io.close()
-
-
-# In[ ]:
-
 
 

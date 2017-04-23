@@ -81,7 +81,7 @@ class ModelWrapper(object):
             self.model.cuda()
 
     def get_instance_loss(self, instance_tensors, zero_grad=True):
-        if zero_grads:
+        if zero_grad:
         ## Clear gradients before every update else memory runs out
             self.zero_grad()
         raise NotImplementedError("Please define this function explicitly")

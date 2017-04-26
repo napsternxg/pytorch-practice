@@ -61,6 +61,10 @@ class ModelWrapper(object):
         
     def zero_grad(self):
         self.model.zero_grad()
+
+    def post_backward(self):
+        ## Implement things like grad clipping or grad norm
+        pass
         
     def get_parameters(self):
         return self.model.paramerters()
@@ -71,9 +75,10 @@ class ModelWrapper(object):
         else:
             self.model.eval()
             
-    def save(self, filename):
+    def save(self, filename, verbose=True):
         torch.save(self.model, filename)
-        print("{} model saved to {}".format(self.model.__class__, filename))
+        if verbose:
+            print("{} model saved to {}".format(self.model.__class__, filename))
         
     def load(self, filename):
         self.model = torch.load(filename)
@@ -90,6 +95,7 @@ class ModelWrapper(object):
         raise NotImplementedError("Please define this function explicitly")
         
     def predict_batch(self, batch_tensors, title="train"):
+        self.model.eval() # Set model to eval mode
         predictions = []
         for instance_tensors in tqdm(batch_tensors,
                 desc="%s predict" % title, unit="instance"):
@@ -108,7 +114,7 @@ def get_epoch_function(model_wrapper, optimizer,
         title = "train" if training_mode else "eval"
         for batch_tensors_idxs in np.array_split(data_tensor_idxs, n_splits):
             #from IPython.core.debugger import Tracer; Tracer()()
-            model_wrapper.zero_grad()
+            optimizer.zero_grad()
             #loss = Variable(torch.FloatTensor([0.]))
             losses = []
             for instance_tensors_idx in batch_tensors_idxs:
@@ -123,6 +129,8 @@ def get_epoch_function(model_wrapper, optimizer,
             if training_mode:
                 ## Get gradients of model params wrt. loss
                 loss.backward()
+                ## Model grad specific steps like clipping or norm
+                model_wrapper.post_backward()
                 ## Optimize the loss by one step
                 optimizer.step()
         return step_losses
@@ -146,7 +154,12 @@ def training_wrapper(
     n_epochs=10,
     batch_size=1,
     use_cuda=False,
-    log_file="training_output.log"
+    log_file="training_output.log",
+    early_stopping=None,
+    save_best=False,
+    save_path="best_model.pth",
+    reduce_lr_every=5,
+    lr_reduce_factor=0.5
 ):
     """Wrapper to train the model
     """
@@ -204,6 +217,31 @@ def training_wrapper(
                         eval_losses.append((mean_loss, std_loss))
                         write_losses(step_losses, fp, title="eval", epoch=epoch)
                 epoch_progress_bar.update(1)
+                if early_stopping is not None and epoch > 1:
+                    assert isinstance(early_stopping, float), "early_stopping should be either None or float value. Got {}".format(early_stopping)
+                    eval_loss_diff = np.abs(eval_losses[-2][0] - eval_losses[-1][0])
+                    if eval_loss_diff < early_stopping:
+                        epoch_progress_bar.write("Evaluation loss stopped decreased less than {}. Early stopping at epoch {}.".format(early_stopping, epoch))
+                        break
+                if save_best and save_path is not None:
+                    if epoch == 0:
+                        best_eval_loss = eval_losses[-1][0]
+                        best_epoch = epoch
+                        model_wrapper.save(save_path, verbose=False)
+                        continue
+                    # Save the best model
+                    if eval_losses[-1][0] < best_eval_loss:
+                        best_eval_loss = eval_losses[-1][0]
+                        best_epoch = epoch
+                        model_wrapper.save(save_path, verbose=False)
+                    if epoch == n_epochs -1:
+                        epoch_progress_bar.write("Best model from {} epoch with {:3f} loss".format(best_epoch, best_eval_loss))
+
+                if reduce_lr_every > 0 and lr_reduce_factor > 0 and ((epoch + 1) % reduce_lr_every) == 0:
+                    for param_group in optimizer.param_groups:
+                        param_group['lr'] = param_group['lr']*lr_reduce_factor
+
+
     return {
         "training_loss": losses,
         "evaluation_loss": eval_losses
@@ -275,10 +313,11 @@ class CharEmbedding(nn.Module):
         
     def forward(self, X):
         x = self.char_embeddings(X)
+        x = self.dropout(x)
         # Ref: https://github.com/Shawn1993/cnn-text-classification-pytorch/blob/master/model.py
         x = x.unsqueeze(1) # (N,Ci,W,D)
         x = [F.relu(conv(x)).squeeze(3) for conv in self.convs1] #[(N,Co,W), ...]*len(Ks)
-        x = [F.max_pool1d(self.dropout(i), i.size(2)).squeeze(2) for i in x] #[(N,Co), ...]*len(Ks)
+        x = [F.max_pool1d(i, i.size(2)).squeeze(2) for i in x] #[(N,Co), ...]*len(Ks)
         x = torch.cat(x, 1)
         return self.dropout(x)
     
@@ -287,12 +326,16 @@ class WordCharEmbedding(nn.Module):
     def __init__(self,
             vocab_size, embedding_size,
             char_embed_kwargs, dropout=0.5,
+            aux_embedding_size=None,
             concat=False
             ):
         super(WordCharEmbedding, self).__init__()
         self.char_embeddings = CharEmbedding(**char_embed_kwargs)
         self.word_embeddings = nn.Embedding(vocab_size, embedding_size)
         self.dropout = nn.Dropout(dropout)
+        if concat and aux_embedding_size is not None:
+            ## Only allow aux embedding in concat mode
+            self.aux_word_embeddings = nn.Embedding(vocab_size, aux_embedding_size)
         self.concat = concat
         
     def forward(self, X, X_char=None):
@@ -304,10 +347,64 @@ class WordCharEmbedding(nn.Module):
                 for x in X_char
             ], 1)
             if self.concat:
-                word_vecs = torch.cat([char_vecs, word_vecs], 2)
+                embedding_list = [char_vecs, word_vecs]
+                if hasattr(self, "aux_word_embeddings"):
+                    aux_vecs = self.aux_word_embeddings(X)
+                    embedding_list.append(aux_vecs)
+                word_vecs = torch.cat(embedding_list, 2)
             else:
                 word_vecs = char_vecs + word_vecs
         return self.dropout(word_vecs)
+
+class WordCharEmbedding_tuple(nn.Module):
+    def __init__(self,
+            vocab_size, embedding_size,
+            char_embed_kwargs, dropout=0.5,
+            aux_embedding_size=None,
+            concat=False
+            ):
+        super(WordCharEmbedding_tuple, self).__init__()
+        self.char_embeddings = CharEmbedding(**char_embed_kwargs)
+        self.word_embeddings = nn.Embedding(vocab_size, embedding_size)
+        self.dropout = nn.Dropout(dropout)
+        self.concat = concat
+        if concat and aux_embedding_size is not None:
+            ## Only allow aux embedding in concat mode
+            self.aux_word_embeddings = nn.Embedding(vocab_size, aux_embedding_size)
+        
+    def forward(self, X):
+        if isinstance(X, tuple):
+            X, X_char = X
+        # Ref: https://github.com/Shawn1993/cnn-text-classification-pytorch/blob/master/model.py
+        word_vecs = self.word_embeddings(X)
+        if X_char is not None:
+            char_vecs = torch.cat([
+                self.char_embeddings(x).unsqueeze(0)
+                for x in X_char
+            ], 1)
+            if self.concat:
+                embedding_list = [char_vecs, word_vecs]
+                if hasattr(self, "aux_word_embeddings"):
+                    aux_vecs = self.aux_word_embeddings(X)
+                    embedding_list.append(aux_vecs)
+                word_vecs = torch.cat(embedding_list, 2)
+            else:
+                word_vecs = char_vecs + word_vecs
+        return self.dropout(word_vecs)
+
+class ConcatInputs(nn.Module):
+    def __init__(self, input_modules, dim=2):
+        super(ConcatInputs, self).__init__()
+        assert isinstance(input_modules, list), "Modules should be a list of input modules"
+        self.input_modules = nn.ModuleList(input_modules)
+        self.dim = dim
+
+    def forward(self, X):
+        assert isinstance(X, list), "X should be a list of input variables"
+        concat_vecs = torch.cat([self.input_modules[i](x) for i,x in enumerate(X)], self.dim)
+        return concat_vecs
+
+
     
 class LSTMTaggerWordChar(nn.Module):
     def __init__(self, word_char_embedding, embedding_size, hidden_size, output_size):
@@ -418,5 +515,24 @@ class LSTMTaggerWordCharCRF(nn.Module):
     
     def loss(self, X, X_char, Y):
         feats = self.forward(X, X_char)
+        return self.crf.neg_log_likelihood(feats, Y)
+    
+class BiLSTMTaggerWordCharCRF(nn.Module):
+    def __init__(self, input_embedding, embedding_size, hidden_size, output_size):
+        super(BiLSTMTaggerWordCharCRF, self).__init__()
+        self.input_embedding = input_embedding
+        self.lstm = nn.LSTM(embedding_size, hidden_size//2, bidirectional=True)
+        self.output = nn.Linear(hidden_size, output_size)
+        self.crf = CRFLayer(output_size)
+        
+    def forward(self, X):
+        seq_embed = self.input_embedding(X).permute(1, 0, 2)
+        out, hidden = self.lstm(seq_embed)
+        # Reshape the output to be a tensor of shape seq_len*label_size
+        output = self.output(out.view(out.data.size(0), -1))
+        return output
+    
+    def loss(self, X, Y):
+        feats = self.forward(X)
         return self.crf.neg_log_likelihood(feats, Y)
     

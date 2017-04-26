@@ -72,13 +72,17 @@ def load_word_vectors(vector_file, ndims, vocab, cache_file, override_cache=Fals
     # Else load vectors from the vector file
     total, found = 0, 0
     with open(vector_file) as fp:
-        for line in fp:
-            line = line.strip().split()
+        for i, line in enumerate(fp):
+            line = line.rstrip().split()
             if line:
                 total += 1
-                assert len(line) == ndims+1,(
-                    "{} vector dims {} doesn't match ndims={}".format(line[0], len(line)-1, ndims)
-                )
+                try:
+                    assert len(line) == ndims+1,(
+                        "Line[{}] {} vector dims {} doesn't match ndims={}".format(i, line[0], len(line)-1, ndims)
+                    )
+                except AssertionError as e:
+                    print(e)
+                    continue
                 word = line[0]
                 idx = vocab.getidx(word) 
                 if idx >= vocab.offset:
